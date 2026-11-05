@@ -1,0 +1,102 @@
+# CI for the Software Testing sample project.
+# Stages: static checks -> in-process unit/integration (+coverage) -> black-box system tests -> quality (mutation, perf).
+image: node:20-bookworm
+
+stages:
+  - lint
+  - test
+  - system
+  - quality
+
+variables:
+  npm_config_cache: "$CI_PROJECT_DIR/.npm"
+  MONGOMS_VERSION: "7.0.14"
+  MONGOMS_DOWNLOAD_DIR: "$CI_PROJECT_DIR/.mongodb-binaries"
+
+cache:
+  key:
+    files:
+      - package-lock.json
+  paths:
+    - .npm/
+    - .mongodb-binaries/
+
+default:
+  before_script:
+    - npm ci
+
+lint:
+  stage: lint
+  script:
+    - npm run lint
+
+unit_integration:
+  stage: test
+  script:
+    - npm run test:inproc
+  coverage: '/Statements\s*:\s*(\d+(?:\.\d+)?)%/'
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - coverage/
+      - reports/
+    reports:
+      junit: reports/junit-inproc.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage/cobertura-coverage.xml
+
+api_system:
+  stage: system
+  services:
+    - name: mongo:7
+      alias: mongo
+  variables:
+    # dotenv never overrides variables that are already set, so this wins over .env
+    BASE_URL: "http://localhost"
+  script:
+    - node server.js > reports-server.log 2>&1 &
+    - for i in $(seq 1 30); do curl -sf http://localhost:3000/ && break; sleep 1; done
+    - npm run test:api
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - reports/
+      - reports-server.log
+    reports:
+      junit: reports/junit-api.xml
+
+mutation:
+  stage: quality
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - when: manual
+      allow_failure: true
+  script:
+    - npm run mutation
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - reports/mutation/
+
+performance:
+  stage: quality
+  rules:
+    - when: manual
+      allow_failure: true
+  services:
+    - name: mongo:7
+      alias: mongo
+  script:
+    - mkdir -p reports
+    - LOG_REQUESTS=1 node server.js > reports/server-timing.log 2>&1 &
+    - for i in $(seq 1 30); do curl -sf http://localhost:3000/ && break; sleep 1; done
+    - npx --yes artillery@2 run __tests__/performance/performance-test.yml --output reports/performance.json
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - reports/
