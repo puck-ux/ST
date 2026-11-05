@@ -1,0 +1,45 @@
+image: docker:latest
+
+services:
+  - node
+  - mongo
+  - docker:dind
+
+stages:
+  - prepare_images
+  - setup_applications
+  - check_status
+  - test
+  - teardown_applications
+
+prepare_images:
+  stage: prepare_images
+  script:
+    - docker build -t sample .
+    - docker build -f TestDockerfile -t test .
+
+setup_applications:
+  stage: setup_applications
+  script:
+    - docker-compose -f docker-compose.yml up -d
+
+check_status:
+  stage: check_status
+  script:
+    - docker inspect sample
+    - docker inspect mongo
+    - hostname
+    - docker ps -a
+
+test:
+  stage: test
+  allow_failure: true
+  script:
+    docker run --network=mynetwork test
+  dependencies:
+    - prepare_images
+
+teardown_applications:
+  stage: teardown_applications
+  script:
+    - docker-compose -f docker-compose.yml down
