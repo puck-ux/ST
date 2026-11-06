@@ -5,59 +5,60 @@
 ### R-S1. Every endpoint except `/`, `/register` and `/login` must reject requests without a valid token (401)
 
 **Type:** Security requirement (authentication).
-**Testing approach:** Black-box API testing over every route with no `Authorization` header to create a table
+**Testing approach:** Black-box API testing over every route with no `Authorization` header to create a table.
 **Appropriateness:** A table containing every route ensures that a new route without protection will be identified. Using the 401 status allows for seperation between "not logged in" and "logged in but forbidden" (403).
 *(Validated by)*
-
 
 
 ### R-S2. Only Admins may list users, read or delete another user, or read another user's orders
 
 **Type:** Security requirement (authorisation).
-**Testing approach:** Decision-table (role × endpoint) testing; one row per combination with the expected status.
-**Appropriateness:** Access control is a set of independent rules over two inputs (who you are, what you ask for), which is exactly the shape a decision table covers systematically. It also catches the case where an admin route returns the *wrong* data, not just the wrong status, so F1 is tested by checking the returned user's email.
+**Testing approach:** Decision-table with role and endpoint.
+**Appropriateness:** Decision-tables allow for combinations where multiple requests can be made with different users/roles. This is useful for testing where the output changes based on who is carrying out the request.
 *(Validated by: `R-S2 role x endpoint matrix` and `R-S2 / F1` in `integration/access-control.test.js`. F1 currently fails.)*
 
 ### R-S3. A non-admin must not be able to become Admin by any route
 
 **Type:** Security requirement (privilege escalation).
 **Testing approach:** Negative testing of every route that writes a user: registering with `role: "Admin"`, `PUT /me` with `role`, and `PUT /me` with a MongoDB operator body `{"$set": {"role": "Admin"}}`; then check the user still gets 403 on `/users`.
-**Appropriateness:** The rule is "no route", so the test must try each write route and the known bypass for Mongo updates. Checking the effect (403 afterwards) rather than only the response code catches escalations that report success quietly.
+**Appropriateness:** 
+
+ The rule is that no route at all should let a user make themselves an admin, so every route that can change a user has to be tried, including a known trick that sneaks the change past the check. Afterwards the test checks whether the user can actually do admin things, because a change can succeed quietly even when the response looks harmless.
 *(Planned: `integration/users.test.js`. Expected to expose F2 and F4.)*
 
 ### R-S4. Users may only read or change their own orders, and cannot reassign an order to another user
 
 **Type:** Security requirement (authorisation, data ownership).
 **Testing approach:** Two-user scenario tests: user A tries to read, update and delete user B's order; A tries to set `user` to B's id on their own order.
-**Appropriateness:** Ownership bugs only appear with two users, so single-user tests cannot find them. Reading the order back from the database after the attempt confirms nothing changed.
+**Appropriateness:** You can only find out whether one user can touch another user's orders by having two users, so tests with a single user would never catch this. After each attempt the order is checked again to make sure it really wasn't changed.
 *(Planned: `integration/orders.test.js`. Expected to expose F11.)*
 
 ### R-S5. No response may contain a password hash, and passwords must always be stored hashed
 
 **Type:** Security requirement (confidentiality).
 **Testing approach:** Assert `password` is absent from every user-returning response (`/register`, `/me`, `/users`, `/user/:id`); after changing a password via `PUT /me`, check the stored value is a bcrypt hash and that login with the new password works.
-**Appropriateness:** Information disclosure is invisible to status-code checks, so the test must inspect response bodies. The login check turns a storage detail into observable behaviour.
+**Appropriateness:** A request can succeed and still leak private data, so the tests have to look at what is actually sent back, not just whether the request worked. Logging in with a newly changed password is a simple way to check from the outside that the password was saved properly.
 *(Planned: `integration/users.test.js`. Expected to expose F5 and F6.)*
 
 ### R-S6. An admin must not be able to delete another admin
 
 **Type:** Functional requirement (business rule).
 **Testing approach:** Black-box API test with two admin accounts.
-**Appropriateness:** A single explicit rule with one forbidden case and one allowed case (deleting a normal user); two tests cover it fully.
+**Appropriateness:** This is one simple rule: an admin can delete a normal user but not another admin. One test for each case is all it needs.
 *(Validated by: existing `should fail to delete an admin user` in `api/api.users-admin.test.js`, made non-vacuous; matrix row `DELETE /user/:id as admin -> 200`.)*
 
 ### R-P1. `GET /` must have p95 latency under 50 ms at 10 requests/s for 60 s on a local machine
 
 **Type:** Performance requirement (measurable quality attribute).
 **Testing approach:** Artillery load test, repeated 5 times; report mean p95 with a 95% confidence interval.
-**Appropriateness:** One run of a latency test is noise; repeating it and giving an interval makes the pass/fail decision defensible. `GET /` has no database or bcrypt work, so it measures the framework baseline that the other endpoints build on.
+**Appropriateness:** Speed varies from run to run, so a single measurement can't be trusted. Running it five times and averaging gives a fair answer. `GET /` does almost no work, so it shows how fast the server is at its quickest, which every other request builds on.
 *(Planned: `__tests__/performance/performance-test.yml`.)*
 
 ### R-P2. The login + order flow must have p95 latency under 300 ms at 10 arrivals/s with 0% errors
 
 **Type:** Performance requirement.
 **Testing approach:** Artillery scenario (register → login → create/read/update/delete order), 5 repeated runs, with an `ensure` threshold so the run fails automatically if p95 or the error rate is exceeded.
-**Appropriateness:** This is the realistic user journey and includes bcrypt hashing, the most expensive operation in the system. The existing script calls routes that do not exist (T6), so it must be fixed before its numbers mean anything.
+**Appropriateness:** This is what a real customer does, and it includes checking the password at login, which is deliberately the slowest step in the system. The original load test sent requests to addresses that don't exist (T6), so it had to be fixed before its results meant anything.
 *(Planned: fixed `__tests__/performance/performance-test.yml`.)*
 
 ---
@@ -69,7 +70,7 @@
 **Level:** Integration — `/register` and `/login` (users.js), the JWT, `authenticateToken` (auth.js) and MongoDB working together.
 **Type:** Functional requirement.
 **Testing approach:** In-process scenario test with supertest against an in-memory database: register → login → `GET /me` returns the same user.
-**Appropriateness:** Each component can be correct on its own while the chain fails (e.g. a mismatched secret or token format). Testing the chain in-process keeps it fast and isolated while still exercising the real code paths.
+**Appropriateness:** Each part can work fine on its own and still fail when joined together, for example if a login token is made one way and checked another. Testing the whole chain from sign-up to use shows the parts actually fit together, while still running quickly on its own temporary database.
 *(Planned: `integration/users.test.js`.)*
 
 ### R-I2. An order created by POST must be returned by GET, changed by PUT, and return 404 after DELETE
@@ -77,7 +78,7 @@
 **Level:** Integration — order routes, auth middleware and MongoDB.
 **Type:** Functional requirement (persistence).
 **Testing approach:** State-based testing: create → read → update → read → delete → read, checking both the HTTP responses and the stored document.
-**Appropriateness:** Persistence bugs show up as a mismatch between what the API reports and what is stored, so the test checks both. A full lifecycle in one test mirrors real use.
+**Appropriateness:** The system could say an order was saved or changed when it wasn't, so the test checks both what the system says and what was actually stored. Following one order from creation to deletion matches how it would really be used.
 *(Planned: `integration/orders.test.js`.)*
 
 ### R-I3. Malformed, unknown or missing IDs and request bodies must return 400 or 404, never 500, a hang or a crash
@@ -85,7 +86,7 @@
 **Level:** Integration.
 **Type:** Robustness requirement.
 **Testing approach:** Negative tests and boundary values (invalid ObjectId `abc`, valid-but-unknown ID `000000000000000000000000`, empty body, missing password on login); property-based testing with generated request bodies, checking the server still answers `/` afterwards.
-**Appropriateness:** Hand-picked bad inputs cover known risks; generated inputs cover the ones nobody thought of. Checking that the server is still alive afterwards is necessary because some faults (F7) throw outside the request's error handling.
+**Appropriateness:** Choosing bad inputs by hand covers the problems we can think of, and letting a tool generate random ones finds the ones we wouldn't think of. The test also checks the server is still running afterwards, because some bad inputs (F7) can crash it outright rather than just giving an error.
 *(Planned: `integration/orders.test.js`, `integration/robustness.property.test.js`. Expected to expose F7, F9, F10.)*
 
 ---
@@ -97,7 +98,7 @@
 **Level:** Unit — the user schema's email validator.
 **Type:** Functional requirement.
 **Testing approach:** Equivalence partitioning and boundary values.
-**Appropriateness:** Emails split cleanly into valid and invalid classes (no `@`, no dot in the domain, nothing before `@`, inner space, two `@`, empty). One representative per class plus the smallest valid case (`a@b.c`) covers the rule without enumerating addresses.
+**Appropriateness:** Email addresses fall into a few kinds of right and wrong: missing the `@`, missing the dot, nothing before the `@`, a space inside, two `@`s, or empty. Testing one example of each kind, plus the shortest valid address (`a@b.c`), covers the rule without testing endless addresses.
 *(Validated by: `R-U1 email validation` in `unit/models.test.js` — 10 cases, all passing.)*
 
 ### R-U2. `authenticateToken` must return 401 with no token, 403 for an invalid, expired or deleted-user token, and otherwise set `req.user` and call `next()`
@@ -105,7 +106,7 @@
 **Level:** Unit — `endpoints/auth.js`.
 **Type:** Functional and security requirement.
 **Testing approach:** Unit test with test doubles: mocked `req`, `res` and `next`, and a stubbed `User.findOne`.
-**Appropriateness:** The middleware guards every protected route, so it deserves isolated, exhaustive tests of each branch. Stubbing the database lets each branch be forced directly (e.g. "token valid but user deleted") without setting up data.
+**Appropriateness:** This check protects almost every part of the system, so every way it can respond is tested on its own. Replacing the database with a stand-in makes it easy to set up awkward cases, such as a valid login for an account that has since been deleted, without creating real data.
 *(Planned: `unit/auth.test.js`.)*
 
 ### R-U3. The user model must reject a missing name, email, password or address, and any role outside {User, Admin}
@@ -113,7 +114,7 @@
 **Level:** Unit — `models/user.js`.
 **Type:** Functional requirement.
 **Testing approach:** Category-partition testing with `validateSync()`.
-**Appropriateness:** Each required field is an independent category; removing one at a time from a known-valid user isolates each rule. Role is a small closed set, so its valid and invalid values can be listed outright, including the near-miss `admin`.
+**Appropriateness:** Starting from a user that is fully valid and removing one field at a time shows exactly which rule rejects it. There are only two allowed roles, so the valid and invalid ones can simply be listed, including the easy mistake of a lowercase `admin`.
 *(Validated by: `R-U3 user model required fields and role` in `unit/models.test.js` — 11 cases, all passing.)*
 
 ### R-U4. The order model must reject any type outside {Box1, Box2} and default to Box1
@@ -121,7 +122,7 @@
 **Level:** Unit — `models/order.js`.
 **Type:** Functional requirement.
 **Testing approach:** Equivalence partitioning with `validateSync()`.
-**Appropriateness:** A two-value enum with a default: both valid values, a few near-miss invalid values (`Box3`, `box1`, empty) and the default case cover it completely.
+**Appropriateness:** There are only two box types plus a default, so testing both types, a few nearly-right wrong ones (`Box3`, `box1`, empty) and the default covers everything.
 *(Validated by: `R-U4 order model type` in `unit/models.test.js` — 6 cases, all passing.)*
 
 ---
@@ -133,7 +134,7 @@
 **Level:** Code.
 **Type:** Qualitative requirement (maintainability).
 **Testing approach:** Static analysis (ESLint with the security plugin) run in CI, plus a checklist-based code review.
-**Appropriateness:** Maintainability problems such as the duplicated `/user/:userID` route or an undefined variable are not visible to behavioural tests, but static analysis and review find them directly. Running lint in CI keeps it enforced.
+**Appropriateness:** Problems like the same route written twice, or a variable used without being defined, don't show up when the system is used, so normal tests miss them. Reading the code, by a tool and by a person, finds them directly, and running the tool automatically on every change stops new ones creeping in.
 *(Validated by: `npm run lint` — currently 5 errors; review findings in `docs/review.md` (planned).)*
 
 ---
