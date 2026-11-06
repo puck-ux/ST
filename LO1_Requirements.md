@@ -1,26 +1,18 @@
-# Testing Requirements — ST sample shop API
+# Testing Requirements
 
-**System under test:** the course's Node.js/Express/MongoDB sample API. Users register, log in with a JWT, and order one of two food boxes (`Box1`, `Box2`). There are two roles, `User` and `Admin`.
-
-The README describes behaviour but states no requirements, so the requirements below were derived from the README, the route handlers in `endpoints/`, the schemas in `models/`, and the intent of the existing tests. Each has an ID that test names and commit messages refer to.
-
-Summary: 16 requirements, 4 unit, 3 integration, 8 system and 1 code-level; types are functional, security, robustness, performance and qualitative.
-
----
-
-## System-level requirements
+## System-level requirements — observable behaviour  at the API boundary.
 
 ### R-S1. Every endpoint except `/`, `/register` and `/login` must reject requests without a valid token (401)
 
-**Level:** System — behaviour observable at the API boundary.
 **Type:** Security requirement (authentication).
-**Testing approach:** Table-driven black-box testing over every protected route with no `Authorization` header.
-**Appropriateness:** Authentication is a property of the whole API surface, so one table listing every route makes it obvious if a new route is added without protection. Asserting the exact 401 status separates "not logged in" from "logged in but forbidden" (403).
-*(Validated by: access-control matrix rows in `integration/access-control.test.js`; existing `should fail unauthorized access actions` in `api/api.users-generic.test.js`.)*
+**Testing approach:** Black-box API testing over every route with no `Authorization` header to create a table
+**Appropriateness:** A table containing every route ensures that a new route without protection will be identified. Using the 401 status allows for seperation between "not logged in" and "logged in but forbidden" (403).
+*(Validated by)*
+
+
 
 ### R-S2. Only Admins may list users, read or delete another user, or read another user's orders
 
-**Level:** System.
 **Type:** Security requirement (authorisation).
 **Testing approach:** Decision-table (role × endpoint) testing; one row per combination with the expected status.
 **Appropriateness:** Access control is a set of independent rules over two inputs (who you are, what you ask for), which is exactly the shape a decision table covers systematically. It also catches the case where an admin route returns the *wrong* data, not just the wrong status, so F1 is tested by checking the returned user's email.
@@ -28,7 +20,6 @@ Summary: 16 requirements, 4 unit, 3 integration, 8 system and 1 code-level; type
 
 ### R-S3. A non-admin must not be able to become Admin by any route
 
-**Level:** System.
 **Type:** Security requirement (privilege escalation).
 **Testing approach:** Negative testing of every route that writes a user: registering with `role: "Admin"`, `PUT /me` with `role`, and `PUT /me` with a MongoDB operator body `{"$set": {"role": "Admin"}}`; then check the user still gets 403 on `/users`.
 **Appropriateness:** The rule is "no route", so the test must try each write route and the known bypass for Mongo updates. Checking the effect (403 afterwards) rather than only the response code catches escalations that report success quietly.
@@ -36,7 +27,6 @@ Summary: 16 requirements, 4 unit, 3 integration, 8 system and 1 code-level; type
 
 ### R-S4. Users may only read or change their own orders, and cannot reassign an order to another user
 
-**Level:** System.
 **Type:** Security requirement (authorisation, data ownership).
 **Testing approach:** Two-user scenario tests: user A tries to read, update and delete user B's order; A tries to set `user` to B's id on their own order.
 **Appropriateness:** Ownership bugs only appear with two users, so single-user tests cannot find them. Reading the order back from the database after the attempt confirms nothing changed.
@@ -44,7 +34,6 @@ Summary: 16 requirements, 4 unit, 3 integration, 8 system and 1 code-level; type
 
 ### R-S5. No response may contain a password hash, and passwords must always be stored hashed
 
-**Level:** System.
 **Type:** Security requirement (confidentiality).
 **Testing approach:** Assert `password` is absent from every user-returning response (`/register`, `/me`, `/users`, `/user/:id`); after changing a password via `PUT /me`, check the stored value is a bcrypt hash and that login with the new password works.
 **Appropriateness:** Information disclosure is invisible to status-code checks, so the test must inspect response bodies. The login check turns a storage detail into observable behaviour.
@@ -52,7 +41,6 @@ Summary: 16 requirements, 4 unit, 3 integration, 8 system and 1 code-level; type
 
 ### R-S6. An admin must not be able to delete another admin
 
-**Level:** System.
 **Type:** Functional requirement (business rule).
 **Testing approach:** Black-box API test with two admin accounts.
 **Appropriateness:** A single explicit rule with one forbidden case and one allowed case (deleting a normal user); two tests cover it fully.
@@ -60,7 +48,6 @@ Summary: 16 requirements, 4 unit, 3 integration, 8 system and 1 code-level; type
 
 ### R-P1. `GET /` must have p95 latency under 50 ms at 10 requests/s for 60 s on a local machine
 
-**Level:** System.
 **Type:** Performance requirement (measurable quality attribute).
 **Testing approach:** Artillery load test, repeated 5 times; report mean p95 with a 95% confidence interval.
 **Appropriateness:** One run of a latency test is noise; repeating it and giving an interval makes the pass/fail decision defensible. `GET /` has no database or bcrypt work, so it measures the framework baseline that the other endpoints build on.
@@ -68,7 +55,6 @@ Summary: 16 requirements, 4 unit, 3 integration, 8 system and 1 code-level; type
 
 ### R-P2. The login + order flow must have p95 latency under 300 ms at 10 arrivals/s with 0% errors
 
-**Level:** System.
 **Type:** Performance requirement.
 **Testing approach:** Artillery scenario (register → login → create/read/update/delete order), 5 repeated runs, with an `ensure` threshold so the run fails automatically if p95 or the error rate is exceeded.
 **Appropriateness:** This is the realistic user journey and includes bcrypt hashing, the most expensive operation in the system. The existing script calls routes that do not exist (T6), so it must be fixed before its numbers mean anything.
