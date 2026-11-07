@@ -15,7 +15,7 @@
 **Type:** Security requirement (authorisation).
 **Testing approach:** Decision-table with role and endpoint.
 **Appropriateness:** Decision-tables allow for combinations where multiple requests can be made with different users/roles. This is useful for testing where the output changes based on who is carrying out the request.
-*(Validated by: `R-S2 role x endpoint matrix` and `R-S2 / F1` in `integration/access-control.test.js`. F1 currently fails.)*
+*(Validated by)*
 
 ### R-S3. A non-admin must not be able to become Admin by any route
 
