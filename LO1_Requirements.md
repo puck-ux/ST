@@ -49,17 +49,15 @@
 
 **Type:** Performance requirement (measurable quality attribute).
 **Testing approach:** CHANGE Artillery load test, repeated 5 times; report mean p95 with a 95% confidence interval.
-**Appropriateness:** 
-
-Speed varies from run to run, so a single measurement can't be trusted. Running it five times and averaging gives a fair answer. `GET /` does almost no work, so it shows how fast the server is at its quickest, which every other request builds on.
-*(Planned: `__tests__/performance/performance-test.yml`.)*
+**Appropriateness:** Averaging speeds will give a clearer picture than one run. GET requests are computationally easy so it gives a good picture of the server at its fastest.
+*(Validated by)*
 
 ### R-P2. The login + order flow must have p95 latency under 300 ms at 10 arrivals/s with 0% errors
 
 **Type:** Performance requirement.
-**Testing approach:** Artillery scenario (register → login → create/read/update/delete order), 5 repeated runs, with an `ensure` threshold so the run fails automatically if p95 or the error rate is exceeded.
-**Appropriateness:** This is what a real customer does, and it includes checking the password at login, which is deliberately the slowest step in the system. The original load test sent requests to addresses that don't exist (T6), so it had to be fixed before its results meant anything.
-*(Planned: fixed `__tests__/performance/performance-test.yml`.)*
+**Testing approach:** CHANGE Artillery scenario (register → login → create/read/update/delete order), 5 repeated runs, with an `ensure` threshold so the run fails automatically if p95 or the error rate is exceeded.
+**Appropriateness:** Same as above testing server speed but with customer request flow. Tests the slowest parts of the system so delay requirement is lower.
+*(Validated by)*
 
 ---
 
@@ -67,27 +65,27 @@ Speed varies from run to run, so a single measurement can't be trusted. Running 
 
 ### R-I1. A token issued by `/login` must be accepted by protected routes
 
-**Level:** Integration — `/register` and `/login` (users.js), the JWT, `authenticateToken` (auth.js) and MongoDB working together.
+**Level:** CHANGE Integration — `/register` and `/login` (users.js), the JWT, `authenticateToken` (auth.js) and MongoDB working together.
 **Type:** Functional requirement.
-**Testing approach:** In-process scenario test with supertest against an in-memory database: register → login → `GET /me` returns the same user.
-**Appropriateness:** Each part can work fine on its own and still fail when joined together, for example if a login token is made one way and checked another. Testing the whole chain from sign-up to use shows the parts actually fit together, while still running quickly on its own temporary database.
-*(Planned: `integration/users.test.js`.)*
+**Testing approach:** CHANGE In-process scenario test with supertest against an in-memory database: register → login → `GET /me` returns the same user.
+**Appropriateness:** Each request can work in its own, so they must be tested together to ensure that the routes work correctly. 
+*(Validated by)*
 
 ### R-I2. An order created by POST must be returned by GET, changed by PUT, and return 404 after DELETE
 
-**Level:** Integration — order routes, auth middleware and MongoDB.
+**Level:** CHANGE Integration — order routes, auth middleware and MongoDB.
 **Type:** Functional requirement (persistence).
-**Testing approach:** State-based testing: create → read → update → read → delete → read, checking both the HTTP responses and the stored document.
-**Appropriateness:** The system could say an order was saved or changed when it wasn't, so the test checks both what the system says and what was actually stored. Following one order from creation to deletion matches how it would really be used.
-*(Planned: `integration/orders.test.js`.)*
+**Testing approach:** CHANGE State-based testing: create → read → update → read → delete → read, checking both the HTTP responses and the stored document.
+**Appropriateness:** Checks what the system says and what was stored as it might be wrong. Following the route from creation to deletion simulates how it would be used.
+*(Validated by)*
 
 ### R-I3. Malformed, unknown or missing IDs and request bodies must return 400 or 404, never 500, a hang or a crash
 
-**Level:** Integration.
+**Level:** CHANGE Integration.
 **Type:** Robustness requirement.
-**Testing approach:** Negative tests and boundary values (invalid ObjectId `abc`, valid-but-unknown ID `000000000000000000000000`, empty body, missing password on login); property-based testing with generated request bodies, checking the server still answers `/` afterwards.
-**Appropriateness:** Choosing bad inputs by hand covers the problems we can think of, and letting a tool generate random ones finds the ones we wouldn't think of. The test also checks the server is still running afterwards, because some bad inputs (F7) can crash it outright rather than just giving an error.
-*(Planned: `integration/orders.test.js`, `integration/robustness.property.test.js`. Expected to expose F7, F9, F10.)*
+**Testing approach:** CHANGE Negative tests and boundary values (invalid ObjectId `abc`, valid-but-unknown ID `000000000000000000000000`, empty body, missing password on login); property-based testing with generated request bodies, checking the server still answers `/` afterwards.
+**Appropriateness:** Randomly generated inputs cover problems that woulodn't be thought of. The test checks if the server is still running after to ensure bad inputs do not cause a crash.
+*(Validated by)*
 
 ---
 
@@ -95,35 +93,35 @@ Speed varies from run to run, so a single measurement can't be trusted. Running 
 
 ### R-U1. Email validation must accept exactly the addresses of the form `local@domain.tld` with no whitespace
 
-**Level:** Unit — the user schema's email validator.
+**Level:** CHANGE Unit — the user schema's email validator.
 **Type:** Functional requirement.
 **Testing approach:** Equivalence partitioning and boundary values.
-**Appropriateness:** Email addresses fall into a few kinds of right and wrong: missing the `@`, missing the dot, nothing before the `@`, a space inside, two `@`s, or empty. Testing one example of each kind, plus the shortest valid address (`a@b.c`), covers the rule without testing endless addresses.
-*(Validated by: `R-U1 email validation` in `unit/models.test.js` — 10 cases, all passing.)*
+**Appropriateness:** Equivalence partioning will cover different invalid email addresses. Tests one example of each kind as well as shortest valid address (boundary value). 
+*(Validated by)*
 
 ### R-U2. `authenticateToken` must return 401 with no token, 403 for an invalid, expired or deleted-user token, and otherwise set `req.user` and call `next()`
 
-**Level:** Unit — `endpoints/auth.js`.
+**Level:** CHANGE Unit — `endpoints/auth.js`.
 **Type:** Functional and security requirement.
-**Testing approach:** Unit test with test doubles: mocked `req`, `res` and `next`, and a stubbed `User.findOne`.
-**Appropriateness:** This check protects almost every part of the system, so every way it can respond is tested on its own. Replacing the database with a stand-in makes it easy to set up awkward cases, such as a valid login for an account that has since been deleted, without creating real data.
+**Testing approach:** CHANGE Unit test with test doubles: mocked `req`, `res` and `next`, and a stubbed `User.findOne`.
+**Appropriateness:** CHANGE This check protects almost every part of the system, so every way it can respond is tested on its own. Replacing the database with a stand-in makes it easy to set up awkward cases, such as a valid login for an account that has since been deleted, without creating real data.
 *(Planned: `unit/auth.test.js`.)*
 
 ### R-U3. The user model must reject a missing name, email, password or address, and any role outside {User, Admin}
 
-**Level:** Unit — `models/user.js`.
+**Level:** CHANGE Unit — `models/user.js`.
 **Type:** Functional requirement.
 **Testing approach:** Category-partition testing with `validateSync()`.
-**Appropriateness:** Starting from a user that is fully valid and removing one field at a time shows exactly which rule rejects it. There are only two allowed roles, so the valid and invalid ones can simply be listed, including the easy mistake of a lowercase `admin`.
-*(Validated by: `R-U3 user model required fields and role` in `unit/models.test.js` — 11 cases, all passing.)*
+**Appropriateness:** Test valid user entry then each variation missing a field. Allows the test to see which rule rejects it. Role can be one of two options so valid and ivalid are easy to list.
+*(Validated by)*
 
 ### R-U4. The order model must reject any type outside {Box1, Box2} and default to Box1
 
-**Level:** Unit — `models/order.js`.
+**Level:** CHANGE Unit — `models/order.js`.
 **Type:** Functional requirement.
 **Testing approach:** Equivalence partitioning with `validateSync()`.
-**Appropriateness:** There are only two box types plus a default, so testing both types, a few nearly-right wrong ones (`Box3`, `box1`, empty) and the default covers everything.
-*(Validated by: `R-U4 order model type` in `unit/models.test.js` — 6 cases, all passing.)*
+**Appropriateness:** Only two valid box types so testing those and default covers everything. 
+*(Validated by)*
 
 ---
 
@@ -131,15 +129,15 @@ Speed varies from run to run, so a single measurement can't be trusted. Running 
 
 ### R-Q1. The code must be lint-clean, have no duplicate routes, and use consistent status codes (201 create, 200 update)
 
-**Level:** Code.
+**Level:** CHANGE Code.
 **Type:** Qualitative requirement (maintainability).
-**Testing approach:** Static analysis (ESLint with the security plugin) run in CI, plus a checklist-based code review.
-**Appropriateness:** Problems like the same route written twice, or a variable used without being defined, don't show up when the system is used, so normal tests miss them. Reading the code, by a tool and by a person, finds them directly, and running the tool automatically on every change stops new ones creeping in.
-*(Validated by: `npm run lint` — currently 5 errors; review findings in `docs/review.md` (planned).)*
+**Testing approach:** CHANGE Static analysis (ESLint with the security plugin) run in CI, plus a checklist-based code review.
+**Appropriateness:** Will read over all the code and flag anything that would be missed in a test. Using a human and a tool will find them directly and ensure that nothing is missed.
+*(Validated by)*
 
 ---
 
-## Deliberately not tested
+## Deliberately not tested CHANGE
 
 - **Availability / uptime** — the system is never deployed, so there is nothing realistic to measure.
 - **Concurrent updates to the same order** — would need a controlled concurrency harness; accepted because the system has few write paths.
