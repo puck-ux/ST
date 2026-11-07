@@ -1,6 +1,6 @@
 # Testing Requirements
 
-## System-level requirements — observable behaviour  at the API boundary.
+## System-level requirements — observable behaviour at the API boundary.
 
 ### R-S1. Every endpoint except `/`, `/register` and `/login` must reject requests without a valid token (401)
 
