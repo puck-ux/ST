@@ -20,38 +20,38 @@
 ### R-S3. A non-admin must not be able to become Admin by any route
 
 **Type:** Security requirement (privilege escalation).
-**Testing approach:** Negative testing of every route that writes a user: registering with `role: "Admin"`, `PUT /me` with `role`, and `PUT /me` with a MongoDB operator body `{"$set": {"role": "Admin"}}`; then check the user still gets 403 on `/users`.
-**Appropriateness:** 
-
- The rule is that no route at all should let a user make themselves an admin, so every route that can change a user has to be tried, including a known trick that sneaks the change past the check. Afterwards the test checks whether the user can actually do admin things, because a change can succeed quietly even when the response looks harmless.
-*(Planned: `integration/users.test.js`. Expected to expose F2 and F4.)*
+**Testing approach:** CHANGE Negative testing of every route that writes a user: registering with `role: "Admin"`, `PUT /me` with `role`, and `PUT /me` with a MongoDB operator body `{"$set": {"role": "Admin"}}`; then check the user still gets 403 on `/users`.
+**Appropriateness:** There should be no way for a user to make themselves an admin, so every route that could must be tried. After running the test there are checks to see if the user can perform admin actions as the test's results may not provide an accurate result.
+*(Validated by)*
 
 ### R-S4. Users may only read or change their own orders, and cannot reassign an order to another user
 
 **Type:** Security requirement (authorisation, data ownership).
-**Testing approach:** Two-user scenario tests: user A tries to read, update and delete user B's order; A tries to set `user` to B's id on their own order.
-**Appropriateness:** You can only find out whether one user can touch another user's orders by having two users, so tests with a single user would never catch this. After each attempt the order is checked again to make sure it really wasn't changed.
-*(Planned: `integration/orders.test.js`. Expected to expose F11.)*
+**Testing approach:** CHANGE Two-user scenario tests: user A tries to read, update and delete user B's order; A tries to set `user` to B's id on their own order.
+**Appropriateness:** It is only possible to determine if a user may affect another user's order by having two users. After each attempt from user A the order is checked to make sure it wasn't changed.
+*(Validated by)*
 
 ### R-S5. No response may contain a password hash, and passwords must always be stored hashed
 
 **Type:** Security requirement (confidentiality).
-**Testing approach:** Assert `password` is absent from every user-returning response (`/register`, `/me`, `/users`, `/user/:id`); after changing a password via `PUT /me`, check the stored value is a bcrypt hash and that login with the new password works.
-**Appropriateness:** A request can succeed and still leak private data, so the tests have to look at what is actually sent back, not just whether the request worked. Logging in with a newly changed password is a simple way to check from the outside that the password was saved properly.
-*(Planned: `integration/users.test.js`. Expected to expose F5 and F6.)*
+**Testing approach:** CHANGE Assert `password` is absent from every user-returning response (`/register`, `/me`, `/users`, `/user/:id`); after changing a password via `PUT /me`, check the stored value is a bcrypt hash and that login with the new password works.
+**Appropriateness:** A users password must never be made available from a request so the tests must look at all requests and their responses. To check if a user's password is stored correctly the tests will change the password and re-log in.
+*(Validated by)*
 
 ### R-S6. An admin must not be able to delete another admin
 
 **Type:** Functional requirement (business rule).
-**Testing approach:** Black-box API test with two admin accounts.
-**Appropriateness:** This is one simple rule: an admin can delete a normal user but not another admin. One test for each case is all it needs.
-*(Validated by: existing `should fail to delete an admin user` in `api/api.users-admin.test.js`, made non-vacuous; matrix row `DELETE /user/:id as admin -> 200`.)*
+**Testing approach:** Black-box API testing with two admin accounts.
+**Appropriateness:** Admins should only be able to delete normal users, not admins, so one there is just test for each case.
+*(Validated by)*
 
 ### R-P1. `GET /` must have p95 latency under 50 ms at 10 requests/s for 60 s on a local machine
 
 **Type:** Performance requirement (measurable quality attribute).
-**Testing approach:** Artillery load test, repeated 5 times; report mean p95 with a 95% confidence interval.
-**Appropriateness:** Speed varies from run to run, so a single measurement can't be trusted. Running it five times and averaging gives a fair answer. `GET /` does almost no work, so it shows how fast the server is at its quickest, which every other request builds on.
+**Testing approach:** CHANGE Artillery load test, repeated 5 times; report mean p95 with a 95% confidence interval.
+**Appropriateness:** 
+
+Speed varies from run to run, so a single measurement can't be trusted. Running it five times and averaging gives a fair answer. `GET /` does almost no work, so it shows how fast the server is at its quickest, which every other request builds on.
 *(Planned: `__tests__/performance/performance-test.yml`.)*
 
 ### R-P2. The login + order flow must have p95 latency under 300 ms at 10 arrivals/s with 0% errors
