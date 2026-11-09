@@ -1,229 +1,201 @@
-# Test Plan
+# Testing Plan
 
-This plan turns the requirements in `LO1_Requirements.md` into concrete test cases, says in what order they are built, and records how the plan changed as testing found defects. The Status column is updated as tests are written; the changelog at the end records every change to the plan.
+## Chosen set of requirements
 
-**Status key:** Done (test exists and runs) · Planned (not written yet) · RED (written, currently failing because of a known defect)
+### List of requirements to be tested
 
----
+- **R-U1:** Email validation must accept exactly the addresses of the form `local@domain.tld` with no whitespace.
+- **R-U2:** `authenticateToken` must return 401 with no token, 403 for an invalid, expired or deleted-user token, and otherwise set `req.user` and call `next()`.
+- **R-I2:** An order created by POST must be returned by GET, changed by PUT, and return 404 after DELETE.
+- **R-I3:** Malformed or unknown IDs and missing request fields must return 400 or 404, never 500 or a crash.
+- **R-S2:** Only Admins may list users, read or delete another user, or read another user's orders.
+- **R-S3:** A non-admin must not be able to become Admin by any route.
+- **R-P2:** The login + order flow must have p95 latency under 300 ms at 10 arrivals/s with 0% errors.
 
-## 1. Approach and order of work
+### Justification
 
-Testing follows a test-driven cycle for defects: write a test from the requirement, run it, and if it fails because of a defect, commit it as RED, fix the code in a separate commit, then confirm it goes GREEN. Defects not fixed stay documented as known failures.
-
-Tests are built from the bottom up, so that failures higher up can be trusted:
-
-1. **Unit** (`__tests__/unit/`): models and the auth middleware. Fast, no server, isolate single components.
-2. **Integration** (`__tests__/integration/`): routes + auth + an in-memory MongoDB, through supertest. Produces the coverage figures.
-3. **System** (`__tests__/api/`): the original black-box suite against a running server, fixed so its negative tests can fail.
-4. **Performance** (`__tests__/performance/`): Artillery runs against a running server.
-5. **Static analysis and review**: ESLint and a checklist review (R-Q1).
-
-Security requirements (R-S2, R-S3, R-S4, R-S5) are prioritised within each level, because they carry the highest risk: one user acting on another user's data.
+The seven requirements were chosen so that they cover all three levels and four requirement types: functional (R-U1 & R-I2), robustness (R-I3), security (R-U2, R-S2 & R-S3) and performance (R-P2). Security is a high concern as there is the risk of a regular user altering data or gaining administrative privileges. Functionality is also a concern as the system must behave correctly or it won't be able to meet the specification, this links into robustness as a the system must be able to handle malformed or incorrect data properly. The system must also be able to perform well under load without errors.
 
 ---
 
-## 2. Requirement → test traceability
+## Testing Levels and Approaches
 
-| Req | Level | Technique | Test file | No. of cases | Status |
-| --- | --- | --- | --- | --- | --- |
-| R-U1 | Unit | Equivalence partitioning, boundary values | `unit/models.test.js` | 10 | Done |
-| R-U2 | Unit | Test doubles (mocks/stubs) | `unit/auth.test.js` | 6 | Planned |
-| R-U3 | Unit | Category-partition (simple form) | `unit/models.test.js` | 11 | Done |
-| R-U4 | Unit | Equivalence partitioning | `unit/models.test.js` | 6 | Done |
-| R-I1 | Integration | Scenario testing | `integration/users.test.js` | 2 | Planned |
-| R-I2 | Integration | State-based testing | `integration/orders.test.js` | 7 | Planned |
-| R-I3 | Integration | Negative testing, boundary values, property-based | `integration/orders.test.js`, `integration/robustness.property.test.js` | 8 + 2 properties | Planned |
-| R-S1 | System | Table-driven black-box | `integration/access-control.test.js` | 1 per protected route | Planned |
-| R-S2 | System | Decision table | `integration/access-control.test.js` | 12 | 10 Done, 2 RED (F1) |
-| R-S3 | System | Negative testing | `integration/users.test.js` | 3 | Planned |
-| R-S4 | System | Two-user scenarios | `integration/orders.test.js` | 4 | Planned |
-| R-S5 | System | Response inspection | `integration/users.test.js` | 5 | Planned |
-| R-S6 | System | Black-box | `api/api.users-admin.test.js`, matrix | 2 | 1 Done, 1 Planned |
-| R-P1 | System | Load testing + statistics | `performance/performance-test.yml` | 5 runs | Planned |
-| R-P2 | System | Load testing + statistics | `performance/performance-test.yml` | 5 runs | Planned |
-| R-Q1 | Code | Static analysis, checklist review | `npm run lint`, `LO5_Review.md` | — | Planned |
+### Unit Level
+
+The unit-level tests target email validation with `validateSync()` and token authentication with `authenticateToken`. Equivalence partitioning and boundary values are used to cover a wide variety of email inputs. Test doubles are used in isolation so that each of the four outcomes of the token authentication can be forced.
+
+### Integration Level
+
+The integration-level tests target order creation and flow, and malformed or unkown IDs and missing fields. Unit-tests are used for R-I2 to confirm everything works in isolation. State-based testing is then used so that any failure will be linked to how the parts interact. Negative-testing is used so that any incorrect ID input or missing field returns an error and the system is tested after to ensure it is still running.
+
+### System Level
+
+The system-level tests target user privilege and privilege escalation. The system API is tested as a black-box over HTTP. A decision table containing role and enpoint combinations confirms the different users' privilege. Negative-testing is used so that any route a user could go down does can be tested to ensure they are unable to become an administrator.\
+Performance is tested with Artillery, repeated five times and reported as mean p95 with a 95% confidence interval.
 
 ---
 
-## 3. Test cases
+## Detailed Partitions and Test Cases
 
-### R-U1 — Email validation (equivalence partitioning + boundaries)
+### R-U1 – Email Validation
 
-| Partition | Example | Expected |
-| --- | --- | --- |
-| Shortest valid (boundary) | `a@b.c` | accepted |
-| Typical valid | `jon.smith@ed.ac.uk` | accepted |
-| Uppercase | `JON@ED.AC.UK` | accepted (stored lowercase) |
-| Surrounding spaces | `  jon@ed.ac.uk  ` | accepted (trimmed) |
-| No `@` | `jonexample.com` | rejected |
-| No dot in domain | `jon@example` | rejected |
-| Nothing before `@` | `@example.com` | rejected |
-| Space inside | `jon smith@example.com` | rejected |
-| Two `@` | `jon@@example.com` | rejected |
-| Empty | `""` | rejected |
+**Identified factors:**\
+Email validity\
+E1: Address has the correct form\
+E2: Address is missing a part or has invalid characters
 
-### R-U2 — Auth middleware (test doubles)
+**Partitions:**
 
-`req`, `res` and `next` are mocks; `User.findOne` is stubbed.
+P1 – Shortest valid address (E1, boundary)
+- Input: `a@b.c`
+- Output: no validation error
+- Specification: System accepts the smallest complete address
 
-| Case | Input | Stub returns | Expected |
-| --- | --- | --- | --- |
-| 1 | No `Authorization` header | — | `res.sendStatus(401)`, `next` not called |
-| 2 | `Bearer` with no token | — | 401, `next` not called |
-| 3 | Token signed with the wrong secret | — | 403, `next` not called |
-| 4 | Expired token | — | 403, `next` not called |
-| 5 | Valid token, user deleted | `null` | 403, `next` not called |
-| 6 | Valid token, user exists | `{ role: "Admin" }` | `req.user` has id + role `Admin`, `next` called once |
+P2 – Typical valid address (E1)
+- Input: `john.smith@ed.ac.uk`, `JOHN@example.com`, `  john@ed.ac.uk  `
+- Output: no validation error
+- Specification: valid addresses accepted; uppercase stored as lowercase; spaces trimmed
 
-### R-U3 — User model (category-partition, one category per field)
+P3 – Invalid address (E2)
+- Input: `johnexample.com`, `john@example`, `@example.com`, `john smith@example.com`, `john@@example.com`, `""`, `john.com@example`
+- Output: validation error on `email`
+- Specification: System rejects invalid email
 
-Start from a fully valid user; vary one field at a time.
+### R-U2 – Authentication Middleware
 
-| Category | Choices tested | Expected |
-| --- | --- | --- |
-| name / email / password / address | present · missing | missing → rejected |
-| role | `User` · `Admin` · `admin` · `SuperUser` · `""` · not given | first two accepted, next three rejected, not given → defaults to `User` |
+**Identified factors:**\
+A1: No token\
+A2: Invalid token\
+A3: Valid token, user deleted\
+A4: Valid token, user exists
 
-### R-U4 — Order model (equivalence partitioning)
+**Partitions:**
 
-| Partition | Example | Expected |
-| --- | --- | --- |
-| Valid | `Box1`, `Box2` | accepted |
-| Near-miss invalid | `Box3`, `box1`, `""` | rejected |
-| Not given | — | defaults to `Box1` |
+P1 – No token (A1)
+- Input: no `Authorization` header; `"Bearer"` with nothing after it
+- Output: 401; `next` not called
+- Specification: System rejects unauthenticated requests
 
-### R-I1 — Login token accepted (scenario)
+P2 – Invalid token (A2)
+- Input: token signed with the wrong secret; expired token
+- Output: 403; `next` not called
+- Specification: System rejects unverified tokens 
 
-1. Register → 201. 2. Login → 200 with `accessToken`. 3. `GET /me` with that token → 200 and the same email.
-Second case: a token signed with another secret is refused by `GET /me` (403).
+P3 – Deleted user (A3)
+- Input: valid token; `User.findOne` stubbed to return `null`
+- Output: 403; `next` not called
+- Specification: System rejects tokens for deleted accounts
 
-### R-I2 — Order lifecycle (state-based)
+P4 – Valid user (A4)
+- Input: valid token; `User.findOne` stubbed to return `{ role: "Admin" }`
+- Output: `req.user` has the id and role `Admin`; `next` called once
+- Specification: valid requests continue with the user's current role
 
-States: **No order** and **Exists**. Coverage criteria: all states, all transitions, and invalid transitions.
+### R-I2 – Order Lifecycle (State-Based)
 
-| # | State | Action | Expected | New state |
-| --- | --- | --- | --- | --- |
-| 1 | No order | `POST /order` | 201, stored in DB | Exists |
-| 2 | Exists | `GET /order/:id` | 200, matches DB | Exists |
-| 3 | Exists | `PUT /order` (type → Box2) | 200, DB shows Box2 | Exists |
-| 4 | Exists | `DELETE /order/:id` | 200, gone from DB | No order |
-| 5 | No order | `GET /order/:id` | 404 | No order |
-| 6 | No order | `PUT /order` | 404 (F9: currently 400) | No order |
-| 7 | No order | `DELETE /order/:id` | 404 (F9: currently 400) | No order |
+States: **No order** and **Exists**. POST moves No order → Exists, PUT keeps it in Exists, DELETE moves Exists → No order, GET observes.
 
-### R-I3 — Robustness (negative, boundary, property-based)
+**Identified factors:**\
+S1: Valid transition\
+S2: Action on a deleted order
 
-| Case | Input | Expected |
-| --- | --- | --- |
-| ID 23 chars | `00000000000000000000000` | 400 |
-| ID 24 chars, unknown | `000000000000000000000000` | 404 |
-| ID 25 chars | `0000000000000000000000000` | 400 |
-| ID non-hex | `00000000000000000000000g` | 400 |
-| Empty body on `POST /register` | `{}` | 400 |
-| Login, no password | `{ email }` | 400, server still answers `GET /` (F7) |
-| Login, no email | `{ password }` | 400 or 404 |
-| Delete unknown user (admin) | `000000000000000000000000` | 404 (F10: currently 400) |
+**Partitions:**
 
-**Properties (fast-check, 200 generated inputs each):**
-- P1: for any JSON object sent to `POST /order`, `POST /register` or `PUT /me`, the status is below 500 and `GET /` still returns 200.
-- P2: for any body without a top-level `role` key sent to `PUT /me` by a User, that user's role is still `User` afterwards (targets F2).
+P1 – Valid lifecycle (S1)
+- Input: `POST /order` → `GET /order/:id` → `PUT /order` (type → Box2) → `DELETE /order/:id`
+- Output: 201 → 200 (matches DB) → 200 (DB shows Box2) → 200 (removed from DB)
+- Specification: each transition gives the right response and the stored order matches
 
-### R-S1 — No token → 401 (table-driven)
+P2 – Actions after delete (S2)
+- Input: `GET`, `PUT` and `DELETE` on the deleted order
+- Output: 404 for each
+- Specification: a deleted order cannot be read, changed or deleted again
 
-One row per protected route (11 routes): `GET /me`, `PUT /me`, `GET /users`, `GET /user/:id`, `DELETE /user/:id`, `POST /order`, `GET /orders/all`, `GET /order/:id`, `PUT /order`, `DELETE /order/:id`, `GET /orders/user/:id`. Each without a header → 401.
+### R-I3 – Malformed or Unkown ID and Missing Field Robustness
 
-### R-S2 — Access control (decision table)
+**Identified factors:**\
+B1: Wrong ID format\
+B2: Unknown ID\
+B3: Missing fields\
+B4: Generated input
 
-| Endpoint | Caller | Target | Expected | Status |
-| --- | --- | --- | --- | --- |
-| `GET /users` | User | — | 403 | Done |
-| `GET /users` | Admin | — | 200 | Done |
-| `GET /user/:id` | User | other user | 403 | Done |
-| `GET /user/:id` | Admin | other user | 200 + **that** user's email | RED (F1) |
-| `GET /user/:id` | Admin | unknown id | 404 | RED (F1) |
-| `GET /orders/user/:id` | User | other user | 403 | Done |
-| `GET /orders/user/:id` | Admin | other user | 200 | Done |
-| `GET /order/:id` | User | other's order | 403 | Done |
-| `GET /order/:id` | Admin | other's order | 200 | Done |
-| `DELETE /order/:id` | User | other's order | 403 | Done |
-| `DELETE /user/:id` | User | other user | 403 | Done |
-| `DELETE /user/:id` | Admin | normal user | 200 | Done |
+**Partitions:**
 
-### R-S3 — No privilege escalation (negative)
+P1 – Wrong ID format (B1, boundaries)
+- Input: 23, 25 and 24 characters with a non-hex character
+- Output: 400
+- Specification: System rejects malformed IDs
 
-| Case | Action | Expected afterwards |
-| --- | --- | --- |
-| 1 | `POST /register` with `role: "Admin"`, then login | `GET /users` → 403 (F4) |
-| 2 | `PUT /me` with `{ role: "Admin" }` | 403 on the PUT, role still `User` |
-| 3 | `PUT /me` with `{ "$set": { "role": "Admin" } }` | role still `User`, `GET /users` → 403 (F2) |
+P2 – Unknown ID (B2, boundary)
+- Input: `000000000000000000000000` on `GET /order/:id` and `DELETE /user/:id` (admin)
+- Output: 404
+- Specification: unknown IDs return not found 
 
-### R-S4 — Order ownership (two users, A and B)
+P3 – Missing fields (B3)
+- Input: `POST /register` with `{}`; `POST /login` with no password
+- Output: 400; server alive post-input
+- Specification: System rejects missing fields without crashing 
 
-| Case | Action by A on B's order | Expected |
-| --- | --- | --- |
-| 1 | `GET /order/:id` | 403 |
-| 2 | `PUT /order` | 403, B's order unchanged in DB |
-| 3 | `DELETE /order/:id` | 403, order still exists |
-| 4 | A sets `user: B.id` on A's own order | rejected, or owner stays A (F11) |
+P4 – Generated input (B4)
+- Input: 200 random JSON bodies sent to `POST /order`
+- Output: every status below 500; `GET /` still returns 200
+- Specification: no input returns an error
 
-### R-S5 — No password hashes exposed
+### R-S2 – Admin-Only Access (Decision Table)
 
-Check that `password` is absent from the response body of: `POST /register`, `GET /me`, `GET /users`, `GET /user/:id` (4 cases, F5). Fifth case: change password with `PUT /me`, then log in with the new password → 200, and the stored value starts with `$2` (bcrypt) (F6).
+**Identified factors:**\
+C1: Caller is a User\
+C2: Caller is an Admin
 
-### R-S6 — Admin cannot delete admin
+**Partitions:**
 
-| Case | Expected |
-| --- | --- |
-| Admin deletes a normal user | 200 (matrix row, Done) |
-| Admin deletes another admin | 403 (fix the vacuous existing test, T1) |
+P1 – User calls admin routes (C1)
+- Input: `GET /users`, `GET /user/:id`, `GET /orders/user/:id`, `DELETE /user/:id`, and `GET`/`DELETE` on another user's order
+- Output: 403
+- Specification: normal users cannot use admin routes or reach others' orders
 
-### R-P1 / R-P2 — Performance
+P2 – Admin calls admin routes (C2)
+- Input: the same routes as an Admin
+- Output: 200
+- Specification: admins can use them
 
-| Req | Scenario | Load | Pass condition | Runs |
-| --- | --- | --- | --- | --- |
-| R-P1 | `GET /` | 10 req/s for 60 s | p95 < 50 ms | 5; report mean p95 ± 95% CI |
-| R-P2 | register → login → create/read/update/delete order | 10 arrivals/s for 60 s | p95 < 300 ms, 0% errors | 5; report mean p95 ± 95% CI |
+P3 – Admin reads a specific user (C2)
+- Input: `GET /user/:id` for a known user; `GET /user/000000000000000000000000`
+- Output: 200 with user's email; 404 for the unknown id
+- Specification: Server returns requested user's email to admin
 
-Before running, fix the script's wrong routes (T6): `/users/register` → `/register`, `/users/login` → `/login`, `/orders` → `/orders/all`.
+### R-S3 – No Privilege Escalation
 
----
+**Identified factors:**\
+X1: Role set at registration\
+X2: Role set on profile update\
+X3: Role set through a database operator
 
-## 4. Instrumentation
+**Partitions:**
 
-| Instrument | What it records | Why it is needed | Status |
-| --- | --- | --- | --- |
-| Jest coverage (Istanbul) | Statement, branch, function and line coverage per file; HTML + Cobertura reports in `coverage/` | Shows which code the tests never reach; required to measure test adequacy (LO3) | Done |
-| JUnit XML reporter | Per-test pass/fail in `reports/` | Lets CI display test results per run | Done |
-| Request-timing middleware (`LOG_REQUESTS=1`) | One JSON line per request: method, path, status, duration in ms, user id | Separates server time from network time when analysing R-P1/R-P2 | Planned |
-| Stryker mutation testing | Which deliberate code changes the tests catch (mutation score) | Measures whether tests check results, not just run code | Done (config) |
-| Artillery JSON output | Latency percentiles and error counts per run | Raw data for the R-P1/R-P2 statistics | Planned |
-| CPU profile (`node --cpu-prof`) | Where CPU time goes during the login flow | Explains R-P2 results (expected: bcrypt dominates) | Planned |
+P1 – Register as admin (X1)
+- Input: `POST /register` with `role: "Admin"`, log in, `GET /users`
+- Output: 403 on `GET /users`
+- Specification: new accounts cannot choose their role
 
----
+P2 – Direct role change (X2)
+- Input: `PUT /me` with `{ "role": "Admin" }`
+- Output: 403; role still `User`
+- Specification: the role field cannot be updated
 
-## 5. Evaluation of the plan (2.2)
+P3 – Operator bypass (X3)
+- Input: `PUT /me` with `{ "$set": { "role": "Admin" } }`, then `GET /users`
+- Output: role still `User`; 403 on `GET /users`
+- Specification: the role check cannot be bypassed
 
-*Fill in once most tests exist. Starting points:*
+### R-P2 – User Journey Latency
 
-- **Strengths:** every requirement traces to at least one test; security rules covered systematically by a decision table; state-based testing covers invalid transitions, not only the happy path.
-- **Omissions:** no concurrency tests (two users updating the same order at once); no database-failure injection; token expiry only tested with an already-expired token, not over 24 hours.
-- **Weaknesses:** performance results come from one machine; the auth unit tests stub the database, so they cannot catch a wrong query.
-- **Would the plan have caught each defect?** Check every F-item against the table in section 2.
+**Identified factors:**\
+M1: Realistic flow under load
 
-## 6. Evaluation of the instrumentation (2.4)
+**Partition:**
 
-*Fill in after Step 4. Starting points:*
-
-- Coverage shows which lines ran, not whether their results were checked. The original suite passed while F1 existed (T1).
-- The timing middleware has no correlation IDs and does not separate database time from application time.
-- What better instrumentation would allow: database query timing, tracing a single request across components, fault injection hooks.
-
----
-
-## 7. Plan changelog
-
-| Date | Change | Reason |
-| --- | --- | --- |
-| 2026-11-05 | Plan created; in-process harness added (app/server split, in-memory DB) | Original suite could not measure coverage (T10) |
-| 2026-11-05 | F1 RED test added to R-S2 | Matrix test returned the wrong user's email |
-| | | |
+P1 – Full journey under load (M1)
+- Input: register → login → create, read, update, delete order, 10 arrivals/s for 60s, repeated 5 times
+- Output: p95 and error rate per run; mean p95 with 95% confidence interval
+- Specification: mean p95 below 300 ms, 0% errors

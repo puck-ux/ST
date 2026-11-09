@@ -84,7 +84,7 @@
 **Level:** CHANGE Integration. \
 **Type:** Robustness requirement. \
 **Testing approach:** CHANGE Negative tests and boundary values (invalid ObjectId `abc`, valid-but-unknown ID `000000000000000000000000`, empty body, missing password on login); property-based testing with generated request bodies, checking the server still answers `/` afterwards. \
-**Appropriateness:** Randomly generated inputs cover problems that woulodn't be thought of. The test checks if the server is still running after to ensure bad inputs do not cause a crash. \
+**Appropriateness:** Randomly generated inputs cover problems that wouldn't be thought of. The test checks if the server is still running after to ensure bad inputs do not cause a crash. \
 *(Validated by)*
 
 ---
@@ -134,11 +134,3 @@
 **Appropriateness:** Will read over all the code and flag anything that would be missed in a test. Using a human and a tool will find them directly and ensure that nothing is missed. \
 *(Validated by)*
 
----
-
-## Deliberately not tested CHANGE
-
-- **Availability / uptime** — the system is never deployed, so there is nothing realistic to measure.
-- **Concurrent updates to the same order** — would need a controlled concurrency harness; accepted because the system has few write paths.
-- **Token expiry after 24 hours** — would need a fake clock; partly covered by testing an already-expired token in R-U2.
-- **Database failure** — error paths when MongoDB is unavailable are checked by review only, not by fault injection. This is the most significant gap.
