@@ -28,6 +28,7 @@ const matrix = [
   { label: "GET /order/:id (not mine) as user -> 403", method: "get", path: () => `/order/${targetOrder.id}`, as: "user", status: 403 },
   { label: "GET /order/:id (not mine) as admin -> 200", method: "get", path: () => `/order/${targetOrder.id}`, as: "admin", status: 200 },
   { label: "DELETE /order/:id (not mine) as user -> 403", method: "delete", path: () => `/order/${targetOrder.id}`, as: "user", status: 403 },
+  { label: "DELETE /order/:id (not mine) as admin -> 200", method: "delete", path: () => `/order/${targetOrder.id}`, as: "admin", status: 200 },
   { label: "DELETE /user/:id as user -> 403", method: "delete", path: () => `/user/${target.user.id}`, as: "user", status: 403 },
   { label: "DELETE /user/:id as admin -> 200", method: "delete", path: () => `/user/${target.user.id}`, as: "admin", status: 200 },
 ];
