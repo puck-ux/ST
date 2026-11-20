@@ -1,54 +1,105 @@
-// R-S1, R-S2: access-control matrix. Each row is one (endpoint, role) pair.
+// R-S2 – Admin-Only Access (Decision Table)
+
 const request = require("supertest");
 const app = require("../../app");
 const db = require("../helpers/db");
 const { makeUser, makeOrder } = require("../helpers/fixtures");
 
-let actors = {};
-let target;      // another ordinary user
-let targetOrder; // an order owned by target
+let admin;        
+let user;         
+let otherUser;   
+let otherOrder;   
 
-beforeAll(db.connect);
-afterAll(db.close);
+beforeAll(async () => {
+  await db.connect();
+});
 
+afterAll(async () => {
+  await db.close();
+});
+
+// clean everything for each test
 beforeEach(async () => {
   await db.clear();
-  actors.admin = await makeUser({ role: "Admin" });
-  actors.user = await makeUser({ role: "User" });
-  target = await makeUser({ role: "User" });
-  targetOrder = await makeOrder(target.user);
+  admin = await makeUser({ role: "Admin" });
+  user = await makeUser({ role: "User" });
+  otherUser = await makeUser({ role: "User" });
+  otherOrder = await makeOrder(otherUser.user);
 });
 
-const matrix = [
-  { label: "GET /users as user -> 403", method: "get", path: () => "/users", as: "user", status: 403 },
-  { label: "GET /users as admin -> 200", method: "get", path: () => "/users", as: "admin", status: 200 },
-  { label: "GET /user/:id as user -> 403", method: "get", path: () => `/user/${target.user.id}`, as: "user", status: 403 },
-  { label: "GET /orders/user/:id as user -> 403", method: "get", path: () => `/orders/user/${target.user.id}`, as: "user", status: 403 },
-  { label: "GET /orders/user/:id as admin -> 200", method: "get", path: () => `/orders/user/${target.user.id}`, as: "admin", status: 200 },
-  { label: "GET /order/:id (not mine) as user -> 403", method: "get", path: () => `/order/${targetOrder.id}`, as: "user", status: 403 },
-  { label: "GET /order/:id (not mine) as admin -> 200", method: "get", path: () => `/order/${targetOrder.id}`, as: "admin", status: 200 },
-  { label: "DELETE /order/:id (not mine) as user -> 403", method: "delete", path: () => `/order/${targetOrder.id}`, as: "user", status: 403 },
-  { label: "DELETE /order/:id (not mine) as admin -> 200", method: "delete", path: () => `/order/${targetOrder.id}`, as: "admin", status: 200 },
-  { label: "DELETE /user/:id as user -> 403", method: "delete", path: () => `/user/${target.user.id}`, as: "user", status: 403 },
-  { label: "DELETE /user/:id as admin -> 200", method: "delete", path: () => `/user/${target.user.id}`, as: "admin", status: 200 },
-];
+describe("R-S2 admin-only access", () => {
 
-describe("R-S2 role x endpoint matrix", () => {
-  it.each(matrix)("$label", async ({ method, path, as, status }) => {
-    const res = await request(app)[method](path()).set(actors[as].auth);
-    expect(res.status).toBe(status);
+  // P1
+
+  test("user trying to list users", async () => {
+    const res = await request(app).get("/users").set(user.auth);
+    expect(res.status).toBe(403);
   });
-});
 
-describe("R-S2 / F1: admin reads the user they asked for", () => {
-  it("GET /user/:id returns that user, not the first user in the DB", async () => {
-    const res = await request(app).get(`/user/${target.user.id}`).set(actors.admin.auth);
+  test("user looking up other users", async () => {
+    const res = await request(app).get(`/user/${otherUser.user.id}`).set(user.auth);
+    expect(res.status).toBe(403);
+  });
+
+  test("user listing another user's orders", async () => {
+    const res = await request(app).get(`/orders/user/${otherUser.user.id}`).set(user.auth);
+    expect(res.status).toBe(403);
+  });
+
+  test("user reading another user's orders", async () => {
+    const res = await request(app).get(`/order/${otherOrder.id}`).set(user.auth);
+    expect(res.status).toBe(403);
+  });
+
+  test("user deleting another user's order", async () => {
+    const res = await request(app).delete(`/order/${otherOrder.id}`).set(user.auth);
+    expect(res.status).toBe(403);
+  });
+
+  test("user deleting another user", async () => {
+    const res = await request(app).delete(`/user/${otherUser.user.id}`).set(user.auth);
+    expect(res.status).toBe(403);
+  });
+
+  // P2
+
+  test("admin listing users", async () => {
+    const res = await request(app).get("/users").set(admin.auth);
     expect(res.status).toBe(200);
-    expect(res.body.email).toBe(target.user.email); // RED until F1 is fixed
   });
 
-  it("GET /user/:id for an unknown id returns 404", async () => {
-    const res = await request(app).get("/user/000000000000000000000000").set(actors.admin.auth);
-    expect(res.status).toBe(404); // RED until F1 is fixed
+  test("admin listing a user's orders", async () => {
+    const res = await request(app).get(`/orders/user/${otherUser.user.id}`).set(admin.auth);
+    expect(res.status).toBe(200);
+  });
+
+  test("admin reading a user's orders", async () => {
+    const res = await request(app).get(`/order/${otherOrder.id}`).set(admin.auth);
+    expect(res.status).toBe(200);
+  });
+
+  test("admin deleting a user's order", async () => {
+    const res = await request(app).delete(`/order/${otherOrder.id}`).set(admin.auth);
+    expect(res.status).toBe(200);
+  });
+
+  test("admin deleting a non-admin user", async () => {
+    const res = await request(app).delete(`/user/${otherUser.user.id}`).set(admin.auth);
+    expect(res.status).toBe(200);
+  });
+
+  // P3
+
+  test("admin looking up user", async () => {
+    const res = await request(app).get(`/user/${otherUser.user.id}`).set(admin.auth);
+
+    expect(res.status).toBe(200);
+    expect(res.body.email).toBe(otherUser.user.email);
+  });
+
+  test("admin looking up user who doesn't exist", async () => {
+    const res = await request(app).get("/user/000000000000000000000000").set(admin.auth);
+
+    expect(res.status).toBe(404); 
   });
 });

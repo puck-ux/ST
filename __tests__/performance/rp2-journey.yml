@@ -1,0 +1,86 @@
+# R-P2 – User Journey Latency
+config:
+  target: "http://localhost:3000"
+  phases:
+    - duration: 60
+      arrivalRate: 10
+  plugins:
+    expect: {}                 
+    metrics-by-endpoint:
+      useOnlyRequestNames: true
+  ensure:                     
+    thresholds:
+      - http.response_time.p95: 300
+    conditions:
+      - expression: "vusers.failed == 0"
+
+scenarios:
+  - name: "R-P2 user journey"
+    flow:
+      - post:
+          name: "register"
+          url: "/register"
+          json:
+            name: "Performance User"
+            email: "testperf-{{ $randomString(12) }}@example.com"
+            password: "Passw0rd!"
+            address: "1 Test Street"
+          capture:
+            - json: "$.email"
+              as: "email"
+          expect:
+            - statusCode: [200, 201]
+
+      - post:
+          name: "login"
+          url: "/login"
+          json:
+            email: "{{ email }}"
+            password: "Passw0rd!"
+          capture:
+            - json: "$.accessToken"
+              as: "token"
+          expect:
+            - statusCode: [200, 201]
+
+      - post:
+          name: "create order"
+          url: "/order"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          json:
+            type: "Box1"
+            description: "{Test Order - Performance}"
+          capture:
+            - json: "$._id"
+              as: "orderId"
+          expect:
+            - statusCode: [200, 201]
+
+      - get:
+          name: "read order"
+          url: "/order/{{ orderId }}"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          expect:
+            - statusCode: [200, 201]
+
+      - put:
+          name: "update order"
+          url: "/order"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          json:
+            _id: "{{ orderId }}"
+            type: "Box2"
+            description: "{Test Order - Updated}"
+          expect:
+            - statusCode: [200, 201]
+
+      - delete:
+          name: "delete order"
+          url: "/order/{{ orderId }}"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          expect:
+            - statusCode: [200, 201]

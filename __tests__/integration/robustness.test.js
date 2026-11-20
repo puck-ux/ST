@@ -1,5 +1,5 @@
-// R-I3: malformed or unknown IDs and missing fields must give 400/404, never 5xx or a crash.
-// Techniques: boundary values on the 24-hex-character ObjectId, negative testing, property-based testing.
+// R-I3 – Malformed or Unkown ID and Missing Field Robustness
+
 const request = require("supertest");
 const fc = require("fast-check");
 const app = require("../../app");
@@ -14,63 +14,88 @@ beforeAll(async () => {
   user = await makeUser({ role: "User" });
   admin = await makeUser({ role: "Admin" });
 });
-afterAll(db.close);
 
-describe("R-I3 P1 - wrong ID format (B1, boundaries)", () => {
-  it.each([
-    ["23 characters", "00000000000000000000000"],
-    ["25 characters", "0000000000000000000000000"],
-    ["24 characters with a non-hex character", "00000000000000000000000g"],
-  ])("GET /order/:id with %s -> 400", async (_label, id) => {
-    const res = await request(app).get(`/order/${id}`).set(user.auth);
-    expect(res.status).toBe(400);
-  });
+afterAll(async () => {
+  await db.close();
 });
 
-describe("R-I3 P2 - unknown but well-formed ID (B2, boundary)", () => {
-  const UNKNOWN = "000000000000000000000000"; // exactly 24 hex characters
+// unkown id with correct format
+const UNKNOWN_ID = "000000000000000000000000";
 
-  it("GET /order/:id -> 404", async () => {
-    const res = await request(app).get(`/order/${UNKNOWN}`).set(user.auth);
+describe("R-I3 robustness", () => {
+
+  // P1
+
+  test("ID that is one character too short", async () => {
+    const res = await request(app).get("/order/00000000000000000000000").set(user.auth);
+
+    expect(res.status).toBe(400);
+  });
+
+  test("ID that is one character too long", async () => {
+    const res = await request(app).get("/order/0000000000000000000000000").set(user.auth);
+
+    expect(res.status).toBe(400);
+  });
+
+  test("ID with non-hex character", async () => {
+    const res = await request(app).get("/order/00000000000000000000000g").set(user.auth);
+
+    expect(res.status).toBe(400);
+  });
+
+  // P2
+
+  test("reading order that doesn't exist", async () => {
+    const res = await request(app).get(`/order/${UNKNOWN_ID}`).set(user.auth);
+
     expect(res.status).toBe(404);
   });
 
-  it("DELETE /user/:id as admin -> 404", async () => {
-    const res = await request(app).delete(`/user/${UNKNOWN}`).set(admin.auth);
-    expect(res.status).toBe(404); // RED: null dereference gives 400 (F10)
-  });
-});
+  test("admin deleting a user that doesn't exist", async () => {
+    const res = await request(app).delete(`/user/${UNKNOWN_ID}`).set(admin.auth);
 
-describe("R-I3 P3 - missing fields (B3)", () => {
-  it("POST /register with {} -> 400", async () => {
+    expect(res.status).toBe(404);
+  });
+
+  // P3
+
+  test("registering with an empty body", async () => {
     const res = await request(app).post("/register").send({});
+
     expect(res.status).toBe(400);
   });
 
-  it("POST /login with no password -> 400, and the server still answers", async () => {
+  test("logging in without a password", async () => {
     let status;
     try {
-      const res = await request(app).post("/login").send({ email: user.user.email }).timeout(3000);
+      const res = await request(app)
+        .post("/login")
+        .send({ email: user.user.email })
+        .timeout(3000);
       status = res.status;
     } catch (err) {
-      status = "no response"; // F7: bcrypt throws outside the try/catch, so no reply is sent
+      status = "no response";
     }
-    expect(status).toBe(400);
-    const alive = await request(app).get("/");
-    expect(alive.status).toBe(200);
-  });
-});
 
-describe("R-I3 P4 - generated input (B4, property-based)", () => {
-  it("200 random JSON bodies to POST /order never give a 5xx, server still answers", async () => {
+    expect(status).toBe(400);
+
+    const stillAlive = await request(app).get("/");
+    expect(stillAlive.status).toBe(200);
+  });
+
+  // P4
+
+  test("200 random request bodies to POST /order", async () => {
     await fc.assert(
-      fc.asyncProperty(fc.object(), async (body) => {
-        const res = await request(app).post("/order").set(user.auth).send(body);
+      fc.asyncProperty(fc.object(), async (randomBody) => {
+        const res = await request(app).post("/order").set(user.auth).send(randomBody);
         expect(res.status).toBeLessThan(500);
       }),
       { numRuns: 200 }
     );
-    const alive = await request(app).get("/");
-    expect(alive.status).toBe(200);
+
+    const stillAlive = await request(app).get("/");
+    expect(stillAlive.status).toBe(200);
   }, 120000);
 });

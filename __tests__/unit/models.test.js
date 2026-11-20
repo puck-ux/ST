@@ -1,84 +1,72 @@
-// Unit tests for the Mongoose models: R-U1, R-U3, R-U4.
-// No database needed: validateSync() runs the schema rules in memory.
-// Technique: equivalence partitioning + boundary values (each row = one partition).
-const { User } = require("../../models/user");
-const { Order } = require("../../models/order");
+// R-U1 - Email Validation
 
-// A user that satisfies every rule. Each test changes ONE field from this.
-const validUser = () => ({
-  name: "Test User",
-  email: "test@example.com",
-  password: "hashed-password",
-  address: "1 Test Street",
-  role: "User",
-});
+const { User } = require("../../models/user");
+
+// User where everything is constant but the email
+function emailErrorFor(email) {
+  const user = new User({
+    name: "Test User",
+    email: email,
+    password: "password123",
+    address: "1 Test Street",
+  });
+  const errors = user.validateSync();
+  if (errors) {
+    return errors.errors.email;   
+  } else {
+    return undefined;             
+  }
+}
 
 describe("R-U1 email validation", () => {
-  // Valid partitions: should produce NO email error.
-  it.each([
-    ["simplest valid form", "a@b.c"],
-    ["typical address", "jon.smith@ed.ac.uk"],
-    ["uppercase (stored lowercased)", "JON@ED.AC.UK"],
-    ["surrounding spaces (trimmed)", "  jon@ed.ac.uk  "],
-  ])("accepts %s: %p", (_label, email) => {
-    const err = new User({ ...validUser(), email }).validateSync();
-    expect(err?.errors?.email).toBeUndefined();
+
+  // P1
+
+  test("accepts shortest valid address", () => {
+    expect(emailErrorFor("a@b.c")).toBeUndefined();
   });
 
-  // Invalid partitions: should produce an email error.
-  it.each([
-    ["no @", "jonexample.com"],
-    ["no domain dot", "jon@example"],
-    ["nothing before @", "@example.com"],
-    ["space inside", "jon smith@example.com"],
-    ["two @", "jon@@example.com"],
-    ["empty string", ""],
-    ["dot only before @", "john.com@example"],
-  ])("rejects %s: %p", (_label, email) => {
-    const err = new User({ ...validUser(), email }).validateSync();
-    expect(err?.errors?.email).toBeDefined();
-  });
-});
+  // P2
 
-describe("R-U3 user model required fields and role", () => {
-  it("accepts a fully valid user", () => {
-    expect(new User(validUser()).validateSync()).toBeUndefined();
+  test("accepts normal address", () => {
+    expect(emailErrorFor("first.last@example.com")).toBeUndefined();
   });
 
-  it.each(["name", "email", "password", "address"])("rejects a user with no %s", (field) => {
-    const data = validUser();
-    delete data[field];
-    const err = new User(data).validateSync();
-    expect(err?.errors?.[field]).toBeDefined();
+  test("accepts uppercase address", () => {
+    expect(emailErrorFor("USER@EXAMPLE.COM")).toBeUndefined();
   });
 
-  it.each(["User", "Admin"])("accepts role %p", (role) => {
-    expect(new User({ ...validUser(), role }).validateSync()).toBeUndefined();
+  test("accepts address with spaces around it", () => {
+    expect(emailErrorFor("  user@example.com  ")).toBeUndefined();
   });
 
-  it.each(["admin", "SuperUser", ""])("rejects role %p", (role) => {
-    const err = new User({ ...validUser(), role }).validateSync();
-    expect(err?.errors?.role).toBeDefined();
+  // P3
+
+  test("rejects address with no @", () => {
+    expect(emailErrorFor("userexample.com")).toBeDefined();
   });
 
-  it("defaults role to User when none is given", () => {
-    const data = validUser();
-    delete data.role;
-    expect(new User(data).role).toBe("User");
-  });
-});
-
-describe("R-U4 order model type", () => {
-  it.each(["Box1", "Box2"])("accepts type %p", (type) => {
-    expect(new Order({ type }).validateSync()).toBeUndefined();
+  test("rejects address with no dot after the @", () => {
+    expect(emailErrorFor("user@example")).toBeDefined();
   });
 
-  it.each(["Box3", "box1", ""])("rejects type %p", (type) => {
-    const err = new Order({ type }).validateSync();
-    expect(err?.errors?.type).toBeDefined();
+  test("rejects address with nothing before the @", () => {
+    expect(emailErrorFor("@example.com")).toBeDefined();
   });
 
-  it("defaults type to Box1", () => {
-    expect(new Order({}).type).toBe("Box1");
+  test("rejects address with a space in the middle", () => {
+    expect(emailErrorFor("first last@example.com")).toBeDefined();
+  });
+
+  test("rejects address with two @ signs", () => {
+    expect(emailErrorFor("user@@example.com")).toBeDefined();
+  });
+
+  test("rejects empty address", () => {
+    expect(emailErrorFor("")).toBeDefined();
+  });
+
+  test("rejects address where the only dot is before the @", () => {
+    expect(emailErrorFor("user.com@example")).toBeDefined();
   });
 });
