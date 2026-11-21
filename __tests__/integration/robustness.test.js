@@ -87,15 +87,18 @@ describe("R-I3 robustness", () => {
   // P4
 
   test("200 random request bodies to POST /order", async () => {
-    await fc.assert(
-      fc.asyncProperty(fc.object(), async (randomBody) => {
-        const res = await request(app).post("/order").set(user.auth).send(randomBody);
-        expect(res.status).toBeLessThan(500);
-      }),
-      { numRuns: 200 }
-    );
 
+    const randomBodies = fc.object();
+    const neverCausesServerError = fc.asyncProperty(randomBodies, async (randomBody) => {
+      const res = await request(app).post("/order").set(user.auth).send(randomBody);
+      expect(res.status).toBeLessThan(500);
+    });
+
+    await fc.assert(neverCausesServerError, { numRuns: 200 });
+
+    
     const stillAlive = await request(app).get("/");
     expect(stillAlive.status).toBe(200);
-  }, 120000);
+
+  }, 120000); 
 });

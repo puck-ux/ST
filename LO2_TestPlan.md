@@ -52,12 +52,12 @@ P1 – Shortest valid address (E1, boundary)
 - Specification: System accepts the smallest complete address
 
 P2 – Typical valid address (E1)
-- Input: `john.smith@ed.ac.uk`, `JOHN@example.com`, `  john@ed.ac.uk  `
+- Input: `first.last@example.com`, `USER@EXAMPLE.COM`, `  user@example.com  `
 - Output: no validation error
 - Specification: valid addresses accepted; uppercase stored as lowercase; spaces trimmed
 
 P3 – Invalid address (E2)
-- Input: `johnexample.com`, `john@example`, `@example.com`, `john smith@example.com`, `john@@example.com`, `""`, `john.com@example`
+- Input: `userexample.com`, `user@example`, `@example.com`, `first last@example.com`, `user@@example.com`, `""`, `user.com@example`
 - Output: validation error on `email`
 - Specification: System rejects invalid email
 

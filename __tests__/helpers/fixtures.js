@@ -1,5 +1,3 @@
-// Creates users straight in the DB (bypassing /register, which has fault F4)
-// and returns a ready-made Authorization header for each.
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const { User } = require("../../models/user");

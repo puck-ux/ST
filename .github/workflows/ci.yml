@@ -1,0 +1,92 @@
+# CI for the Software Testing sample project (GitHub Actions).
+# Three jobs run in parallel on every push and pull request:
+#   lint              - ESLint, advisory: reports issues but does not fail the pipeline
+#   unit_integration  - the 48 Jest tests with coverage, on 2 OSes x 2 Node versions
+#   api_system        - the original course API tests against a real MongoDB
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  MONGOMS_VERSION: "7.0.14"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    continue-on-error: true   # known code-quality issues are reported, not blocking
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
+  # Configuration + compatibility testing: same suite on 2 OSes x 2 Node versions.
+  unit_integration:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [20, 22]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: Cache MongoDB binary for mongodb-memory-server
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-${{ env.MONGOMS_VERSION }}-${{ matrix.os }}
+      - run: npm ci
+      - name: Unit + integration tests with coverage
+        run: npm run test:inproc
+      - name: Upload coverage + JUnit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-and-junit-${{ matrix.os }}-node${{ matrix.node }}
+          path: |
+            coverage/
+            reports/
+
+  api_system:
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+    env:
+      # Already-set variables win over .env (dotenv never overrides them).
+      BASE_URL: "http://localhost"
+      DB_ENDPOINT: "mongodb://localhost:27017/sampledb"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Start API server
+        run: |
+          mkdir -p reports
+          node server.js > reports/server.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:3000/ && break; sleep 1; done
+      - name: Black-box system tests
+        run: npm run test:api
+      - name: Upload system test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: system-test-reports
+          path: reports/
