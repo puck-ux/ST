@@ -5,9 +5,6 @@ const mongoose = require("mongoose");
 mongoose.set('strictQuery', true);
 
 module.exports = async () => {
-  // We use the API to register.
-  // Alternatively, you can do it by using Mongoose API,
-  // by applying direct DB operations.
   await axios.post(prepare("/register"), {
     "name": "Admin",
     "role": "Admin",

@@ -25,8 +25,8 @@ describe("R-S3 no privilege escalation", () => {
   test("registering with admin role", async () => {
     const newAccount = {
       name: "New User",
-      email: "new.user@example.com",
-      password: "Passw0rd!",
+      email: "user@example.com",
+      password: "password123",
       address: "1 Test Street",
       role: "Admin",
     };

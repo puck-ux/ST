@@ -8,8 +8,6 @@ require('dotenv').config({ path: '.env' });
 
 module.exports = async () => {
 
-  // Contrary to setup, for demonstration purposes,
-  // we use Mongoose to cleanup the DB.
   await mongoose.connect(
     process.env.DB_ENDPOINT
   );

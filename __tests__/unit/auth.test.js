@@ -80,7 +80,7 @@ describe("R-U2 authentication middleware", () => {
   // P3
 
   test("valid token but user no longer exists", async () => {
-    jest.spyOn(User, "findOne").mockResolvedValue(null); e
+    jest.spyOn(User, "findOne").mockResolvedValue(null); 
     const token = jwt.sign({ id: USER_ID }, SECRET);
 
     const { res, next } = await runAuth(`Bearer ${token}`);
